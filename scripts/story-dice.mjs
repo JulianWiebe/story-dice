@@ -401,6 +401,7 @@ function injectSceneControl() {
       name: MODULE_ID,
       title: localize("STORYDICE.Control.ToolName"),
       icon: "fas fa-dice",
+      layer: "notes",
       tools: [
         {
           name: "open-panel",
