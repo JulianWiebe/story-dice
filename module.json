@@ -1,0 +1,52 @@
+{
+  "id": "story-dice",
+  "type": "module",
+  "title": "Story Dice",
+  "description": "A GM tool for Cyberpunk RED that allows secretly fudging player dice rolls. Select a player, set a desired result, and the next roll they make will show that value instead — without them noticing.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12",
+    "maximum": "12"
+  },
+  "authors": [
+    {
+      "name": "Story Dice",
+      "flags": {}
+    }
+  ],
+  "esmodules": [
+    "scripts/story-dice.mjs"
+  ],
+  "styles": [
+    "styles/story-dice.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "languages/en.json"
+    }
+  ],
+  "relationships": {
+    "systems": [
+      {
+        "id": "cyberpunk-red-core",
+        "type": "system",
+        "compatibility": {}
+      }
+    ],
+    "requires": [
+      {
+        "id": "lib-wrapper",
+        "type": "module",
+        "compatibility": {}
+      }
+    ]
+  },
+  "socket": false,
+  "manifest": "",
+  "download": "",
+  "license": "MIT",
+  "readme": "README.md"
+}

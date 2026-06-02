@@ -1,0 +1,129 @@
+.story-dice-panel .form-group {
+    margin-bottom: 10px;
+}
+
+.story-dice-panel .form-group > label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 3px;
+}
+
+.story-dice-panel select {
+    width: 100%;
+}
+
+.story-dice-panel .value-inputs {
+    display: flex;
+    gap: 16px;
+    margin-bottom: 10px;
+}
+
+.story-dice-panel .value-inputs .sub-group {
+    flex: 1;
+}
+
+.story-dice-panel .value-inputs label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 3px;
+    font-size: 12px;
+}
+
+.story-dice-panel .value-inputs input[type="number"] {
+    width: 80px;
+}
+
+.story-dice-panel .status-indicator {
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.story-dice-panel .status-active {
+    background: rgba(51, 204, 51, 0.15);
+    color: #2aaf2a;
+    border: 1px solid rgba(51, 204, 51, 0.3);
+}
+
+.story-dice-panel .status-idle {
+    background: rgba(204, 51, 51, 0.1);
+    color: #aa2a2a;
+    border: 1px solid rgba(204, 51, 51, 0.2);
+}
+
+.story-dice-panel .button-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.story-dice-panel .button-row button {
+    flex: 1;
+    padding: 8px;
+    font-size: 13px;
+}
+
+.story-dice-panel .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.story-dice-panel .section-header label {
+    font-weight: bold;
+}
+
+.story-dice-panel .clear-btn {
+    background: none;
+    border: 1px solid #782e22;
+    color: #ff9999;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.story-dice-panel .clear-btn:hover {
+    background: rgba(120, 46, 34, 0.3);
+}
+
+.story-dice-panel .history-table {
+    width: 100%;
+    font-size: 11px;
+    border-collapse: collapse;
+    margin-top: 4px;
+}
+
+.story-dice-panel .history-table th,
+.story-dice-panel .history-table td {
+    padding: 4px 6px;
+    text-align: left;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.story-dice-panel .history-table th {
+    background: rgba(0, 0, 0, 0.2);
+    font-weight: bold;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #999;
+}
+
+.story-dice-panel .history-table td.real-val {
+    color: #cc4444;
+}
+
+.story-dice-panel .history-table td.fudge-val {
+    color: #44cc44;
+    font-weight: bold;
+}
+
+.story-dice-panel .history-empty {
+    color: #666;
+    font-style: italic;
+    font-size: 12px;
+    text-align: center;
+    padding: 10px;
+}

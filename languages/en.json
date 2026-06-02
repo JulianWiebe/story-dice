@@ -1,0 +1,46 @@
+{
+  "STORYDICE": {
+    "Panel": {
+      "Title": "Story Dice — GM Control",
+      "TargetPlayer": "Target Player",
+      "SelectPlayer": "— Select a player —",
+      "RollGroup": "Roll Group",
+      "D10Value": "D10 Face (1–10)",
+      "D6Value": "D6 Face (1–6)",
+      "Status": "Status",
+      "Activate": "Activate Fudge",
+      "Deactivate": "Deactivate",
+      "History": "History",
+      "Time": "Time",
+      "Player": "Player",
+      "Formula": "Formula",
+      "Real": "Real",
+      "Fudged": "Fudged",
+      "ClearHistory": "Clear history"
+    },
+    "RollGroup": {
+      "D10": "Combat & Skills (d10)",
+      "D6": "Damage (d6)",
+      "All": "All Rolls"
+    },
+    "Status": {
+      "Idle": "No fudge active — real rolls will be shown.",
+      "Active": "Active — next {group} roll for {player} will be a {value}."
+    },
+    "Control": {
+      "ToolName": "Story Dice",
+      "Title": "Open Story Dice Panel"
+    },
+    "Warn": {
+      "SelectPlayer": "Please select a target player first.",
+      "SelectValue": "Please enter a valid die face value."
+    },
+    "Error": {
+      "GMOnly": "Only the Game Master can use Story Dice."
+    },
+    "Notify": {
+      "FudgeApplied": "Fudge applied: {player} rolled {real} → {fudge} ({formula})",
+      "FudgeCleared": "Fudge deactivated."
+    }
+  }
+}

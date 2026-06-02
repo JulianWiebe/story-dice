@@ -1,0 +1,88 @@
+<form>
+    <div class="form-group">
+        <label for="story-dice-target-user">{{localize "STORYDICE.Panel.TargetPlayer"}}</label>
+        <select name="targetUserId" id="story-dice-target-user">
+            <option value="">{{localize "STORYDICE.Panel.SelectPlayer"}}</option>
+            {{#each players}}
+            <option value="{{id}}" {{#if selected}}selected{{/if}}>{{name}}</option>
+            {{/each}}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="story-dice-roll-group">{{localize "STORYDICE.Panel.RollGroup"}}</label>
+        <select name="rollGroup" id="story-dice-roll-group">
+            {{#each rollGroups}}
+            <option value="{{value}}" {{#if selected}}selected{{/if}}>{{label}}</option>
+            {{/each}}
+        </select>
+    </div>
+
+    <div class="value-inputs">
+        <div class="sub-group" id="story-dice-d10-group">
+            <label for="story-dice-d10-value">{{localize "STORYDICE.Panel.D10Value"}}</label>
+            <input type="number" id="story-dice-d10-value" name="d10Value" value="{{d10Value}}" min="1" max="10" step="1">
+        </div>
+        <div class="sub-group" id="story-dice-d6-group">
+            <label for="story-dice-d6-value">{{localize "STORYDICE.Panel.D6Value"}}</label>
+            <input type="number" id="story-dice-d6-value" name="d6Value" value="{{d6Value}}" min="1" max="6" step="1">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>{{localize "STORYDICE.Panel.Status"}}</label>
+        <div class="status-indicator {{#if fudgeActive}}status-active{{else}}status-idle{{/if}}">
+            {{#if fudgeActive}}&#9679;{{else}}&#9675;{{/if}} {{statusText}}
+        </div>
+    </div>
+
+    <div class="button-row">
+        {{#if fudgeActive}}
+        <button type="button" id="story-dice-deactivate">
+            <i class="fas fa-stop-circle"></i> {{localize "STORYDICE.Panel.Deactivate"}}
+        </button>
+        {{else}}
+        <button type="button" id="story-dice-activate">
+            <i class="fas fa-play-circle"></i> {{localize "STORYDICE.Panel.Activate"}}
+        </button>
+        {{/if}}
+    </div>
+
+    <div class="form-group">
+        <div class="section-header">
+            <label>{{localize "STORYDICE.Panel.History"}}</label>
+            {{#if history.length}}
+            <button type="button" id="story-dice-clear-history" class="clear-btn" title="{{localize 'STORYDICE.Panel.ClearHistory'}}">
+                <i class="fas fa-trash"></i>
+            </button>
+            {{/if}}
+        </div>
+
+        {{#if history.length}}
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>{{localize "STORYDICE.Panel.Time"}}</th>
+                    <th>{{localize "STORYDICE.Panel.Player"}}</th>
+                    <th>{{localize "STORYDICE.Panel.Formula"}}</th>
+                    <th>{{localize "STORYDICE.Panel.Real"}}</th>
+                    <th>{{localize "STORYDICE.Panel.Fudged"}}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each history}}
+                <tr>
+                    <td>{{time}}</td>
+                    <td>{{playerName}}</td>
+                    <td>{{formula}}</td>
+                    <td class="real-val">{{realTotal}} ({{realFaces}})</td>
+                    <td class="fudge-val">{{fudgeTotal}} ({{fudgeFaces}})</td>
+                </tr>
+                {{/each}}
+            </tbody>
+        </table>
+        {{else}}
+        <div class="history-empty">{{localize "STORYDICE.Status.Idle"}}</div>
+        {{/if}}
+    </div>
+</form>
