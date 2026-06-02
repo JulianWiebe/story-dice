@@ -397,23 +397,16 @@ class StoryDicePanel extends FormApplication {
 function injectSceneControl() {
   Hooks.on("getSceneControlButtons", (controls) => {
     if (!game.user.isGM) return;
-    controls.push({
+    const notesGroup = controls.find((c) => c.name === "notes");
+    if (!notesGroup) return;
+    notesGroup.tools.push({
       name: MODULE_ID,
-      title: localize("STORYDICE.Control.ToolName"),
-      icon: "fas fa-dice",
-      layer: "notes",
-      tools: [
-        {
-          name: "open-panel",
-          title: localize("STORYDICE.Control.Title"),
-          icon: "fas fa-dice-d20",
-          onClick: () => {
-            if (game.storydice) game.storydice.openPanel();
-          },
-          button: true,
-        },
-      ],
-      visible: true,
+      title: localize("STORYDICE.Control.Title"),
+      icon: "fas fa-dice-d20",
+      onClick: () => {
+        if (game.storydice) game.storydice.openPanel();
+      },
+      button: true,
     });
   });
 }
