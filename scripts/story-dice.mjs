@@ -367,7 +367,7 @@ class StoryDicePanel extends FormApplication {
 
   async _onAdd(event) {
     event.preventDefault();
-    const fd = new FormDataExtended(this.element.find("#story-dice-add-form")[0]);
+    const fd = new FormDataExtended(this.element.find("form")[0]);
     const data = fd.object;
 
     const targetUserId = data.targetUserId;
