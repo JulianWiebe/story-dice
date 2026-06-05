@@ -15,7 +15,10 @@ const ROLL_GROUPS = {
   ALL: "all",
 };
 
+const SOCKET = `module.${MODULE_ID}`;
 const MAX_HISTORY = 30;
+
+let localConsumed = false;
 
 function localize(key) {
   return game.i18n.localize(key);
@@ -98,6 +101,21 @@ Hooks.once("ready", () => {
   libWrapper.register(MODULE_ID, "Roll.prototype.evaluate", onRollEvaluate, "WRAPPER");
   exposeAPI();
   injectActorSheetButton();
+
+  game.socket.on(SOCKET, async (data) => {
+    if (!game.user.isGM) return;
+    if (data.action === "fudgeConsumed") {
+      await clearFudge();
+      await recordHistory(
+        data.userId,
+        data.formula,
+        data.realTotal,
+        data.fudgeTotal,
+        data.realFaces,
+        data.fudgeFaces
+      );
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -108,6 +126,7 @@ async function onRollEvaluate(wrapped, options = {}) {
   const result = await wrapped(options);
 
   if (options.minimize || options.maximize) return result;
+  if (localConsumed) return result;
   if (!shouldFudge()) return result;
 
   const fudgeSettings = readFudgeSettings();
@@ -137,15 +156,29 @@ async function onRollEvaluate(wrapped, options = {}) {
   });
   this._total = fudgeTotal;
 
-  await clearFudge();
-  await recordHistory(
-    fudgeSettings.targetUserId,
-    formula,
-    realTotal,
-    fudgeTotal,
-    realFacesStr,
-    fudgeFacesStr
-  );
+  localConsumed = true;
+
+  if (game.user.isGM) {
+    await clearFudge();
+    await recordHistory(
+      fudgeSettings.targetUserId,
+      formula,
+      realTotal,
+      fudgeTotal,
+      realFacesStr,
+      fudgeFacesStr
+    );
+  } else {
+    game.socket.emit(SOCKET, {
+      action: "fudgeConsumed",
+      userId: fudgeSettings.targetUserId,
+      formula,
+      realTotal,
+      fudgeTotal,
+      realFaces: realFacesStr,
+      fudgeFaces: fudgeFacesStr,
+    });
+  }
 
   return result;
 }
@@ -449,6 +482,10 @@ function injectActorSheetButton() {
 
 Hooks.on("updateSetting", (setting) => {
   if (!setting.key.startsWith(`${MODULE_ID}.`)) return;
+
+  if (setting.key === `${MODULE_ID}.${SETTINGS.FUDGE_ACTIVE}` && setting.value === true) {
+    localConsumed = false;
+  }
 
   const panel = Object.values(ui.windows).find(
     (w) => w instanceof StoryDicePanel
