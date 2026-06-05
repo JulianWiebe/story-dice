@@ -1,8 +1,7 @@
 const MODULE_ID = "story-dice";
 
 const SETTINGS = {
-  FUDGE_ACTIVE: "fudgeActive",
-  FUDGE_TARGET_USER_ID: "fudgeTargetUserId",
+  FUDGE_QUEUE: "fudgeQueue",
   FUDGE_D10_VALUE: "fudgeD10Value",
   FUDGE_D6_VALUE: "fudgeD6Value",
   FUDGE_ROLL_GROUP: "fudgeRollGroup",
@@ -18,7 +17,7 @@ const ROLL_GROUPS = {
 const SOCKET = `module.${MODULE_ID}`;
 const MAX_HISTORY = 30;
 
-let localConsumed = false;
+const localConsumed = new Set();
 
 function localize(key) {
   return game.i18n.localize(key);
@@ -43,18 +42,11 @@ async function setSetting(key, value) {
 Hooks.once("init", () => {
   injectSceneControl();
 
-  game.settings.register(MODULE_ID, SETTINGS.FUDGE_ACTIVE, {
+  game.settings.register(MODULE_ID, SETTINGS.FUDGE_QUEUE, {
     scope: "world",
     config: false,
-    type: Boolean,
-    default: false,
-  });
-
-  game.settings.register(MODULE_ID, SETTINGS.FUDGE_TARGET_USER_ID, {
-    scope: "world",
-    config: false,
-    type: String,
-    default: "",
+    type: Array,
+    default: [],
   });
 
   game.settings.register(MODULE_ID, SETTINGS.FUDGE_D10_VALUE, {
@@ -94,7 +86,7 @@ Hooks.once("init", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Ready: register libWrapper shim & expose API
+// Ready: register libWrapper shim, socket listener & expose API
 // ---------------------------------------------------------------------------
 
 Hooks.once("ready", () => {
@@ -105,7 +97,7 @@ Hooks.once("ready", () => {
   game.socket.on(SOCKET, async (data) => {
     if (!game.user.isGM) return;
     if (data.action === "fudgeConsumed") {
-      await clearFudge();
+      await removeQueueEntry(data.entryId);
       await recordHistory(
         data.userId,
         data.formula,
@@ -126,23 +118,26 @@ async function onRollEvaluate(wrapped, options = {}) {
   const result = await wrapped(options);
 
   if (options.minimize || options.maximize) return result;
-  if (localConsumed) return result;
-  if (!shouldFudge()) return result;
 
-  const fudgeSettings = readFudgeSettings();
+  const userId = game.user.id;
+  if (localConsumed.has(userId)) return result;
+
+  const entry = findQueueEntry(userId);
+  if (!entry) return result;
+
   const formula = this.formula;
 
   const isD10 = /^1d10$/i.test(formula);
   const isD6 = /^\d+d6$/i.test(formula);
 
-  if (fudgeSettings.rollGroup === ROLL_GROUPS.D10 && !isD10) return result;
-  if (fudgeSettings.rollGroup === ROLL_GROUPS.D6 && !isD6) return result;
-  if (fudgeSettings.rollGroup === ROLL_GROUPS.ALL && !isD10 && !isD6) return result;
+  if (entry.rollGroup === ROLL_GROUPS.D10 && !isD10) return result;
+  if (entry.rollGroup === ROLL_GROUPS.D6 && !isD6) return result;
+  if (entry.rollGroup === ROLL_GROUPS.ALL && !isD10 && !isD6) return result;
 
   const diceTerm = findDiceTerm(this);
   if (!diceTerm) return result;
 
-  const fudgeValue = isD10 ? fudgeSettings.d10Value : fudgeSettings.d6Value;
+  const fudgeValue = isD10 ? entry.d10Value : entry.d6Value;
   const dieCount = diceTerm.number;
   const realTotal = this._total;
   const realFaces = diceTerm.results.map((r) => r.result);
@@ -156,22 +151,16 @@ async function onRollEvaluate(wrapped, options = {}) {
   });
   this._total = fudgeTotal;
 
-  localConsumed = true;
+  localConsumed.add(userId);
 
   if (game.user.isGM) {
-    await clearFudge();
-    await recordHistory(
-      fudgeSettings.targetUserId,
-      formula,
-      realTotal,
-      fudgeTotal,
-      realFacesStr,
-      fudgeFacesStr
-    );
+    await removeQueueEntry(entry.id);
+    await recordHistory(userId, formula, realTotal, fudgeTotal, realFacesStr, fudgeFacesStr);
   } else {
     game.socket.emit(SOCKET, {
       action: "fudgeConsumed",
-      userId: fudgeSettings.targetUserId,
+      entryId: entry.id,
+      userId,
       formula,
       realTotal,
       fudgeTotal,
@@ -184,7 +173,7 @@ async function onRollEvaluate(wrapped, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Dice term detection — duck-type check works across Foundry versions
+// Dice term detection
 // ---------------------------------------------------------------------------
 
 function findDiceTerm(roll) {
@@ -194,28 +183,49 @@ function findDiceTerm(roll) {
 }
 
 // ---------------------------------------------------------------------------
-// Fudge helpers
+// Queue helpers
 // ---------------------------------------------------------------------------
 
-function shouldFudge() {
-  if (!setting(SETTINGS.FUDGE_ACTIVE)) return false;
-  const targetUserId = setting(SETTINGS.FUDGE_TARGET_USER_ID);
-  return targetUserId === game.user.id;
+function findQueueEntry(userId) {
+  if (!userId) return null;
+  const queue = setting(SETTINGS.FUDGE_QUEUE) || [];
+  return queue.find((e) => e.userId === userId) || null;
 }
 
-function readFudgeSettings() {
-  return {
-    rollGroup: setting(SETTINGS.FUDGE_ROLL_GROUP),
-    d10Value: setting(SETTINGS.FUDGE_D10_VALUE),
-    d6Value: setting(SETTINGS.FUDGE_D6_VALUE),
-    targetUserId: setting(SETTINGS.FUDGE_TARGET_USER_ID),
+async function addQueueEntry(userId, d10Value, d6Value, rollGroup) {
+  const queue = foundry.utils.duplicate(setting(SETTINGS.FUDGE_QUEUE)) || [];
+  const existingIdx = queue.findIndex((e) => e.userId === userId);
+  const entry = {
+    id: foundry.utils.randomID(),
+    userId,
+    d10Value: Math.clamped(d10Value ?? 1, 1, 10),
+    d6Value: Math.clamped(d6Value ?? 1, 1, 6),
+    rollGroup: rollGroup ?? ROLL_GROUPS.ALL,
   };
+  if (existingIdx >= 0) {
+    queue[existingIdx] = entry;
+  } else {
+    queue.push(entry);
+  }
+  await setSetting(SETTINGS.FUDGE_QUEUE, queue);
 }
 
-async function clearFudge() {
-  await setSetting(SETTINGS.FUDGE_ACTIVE, false);
-  await setSetting(SETTINGS.FUDGE_TARGET_USER_ID, "");
+async function removeQueueEntry(entryId) {
+  const queue = foundry.utils.duplicate(setting(SETTINGS.FUDGE_QUEUE)) || [];
+  const idx = queue.findIndex((e) => e.id === entryId);
+  if (idx >= 0) {
+    queue.splice(idx, 1);
+    await setSetting(SETTINGS.FUDGE_QUEUE, queue);
+  }
 }
+
+async function clearQueue() {
+  await setSetting(SETTINGS.FUDGE_QUEUE, []);
+}
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
 
 async function recordHistory(userId, formula, realTotal, fudgeTotal, realFaces, fudgeFaces) {
   const user = game.users.get(userId);
@@ -255,7 +265,7 @@ class StoryDicePanel extends FormApplication {
       id: "story-dice-panel",
       title: localize("STORYDICE.Panel.Title"),
       template: `modules/${MODULE_ID}/templates/gm-panel.hbs`,
-      width: 420,
+      width: 450,
       height: "auto",
       resizable: true,
       closeOnSubmit: false,
@@ -265,13 +275,11 @@ class StoryDicePanel extends FormApplication {
   }
 
   getData(_options = {}) {
-    const fudgeActive = setting(SETTINGS.FUDGE_ACTIVE);
-    const targetUserId = setting(SETTINGS.FUDGE_TARGET_USER_ID);
+    const queue = setting(SETTINGS.FUDGE_QUEUE) || [];
     const d10Value = setting(SETTINGS.FUDGE_D10_VALUE);
     const d6Value = setting(SETTINGS.FUDGE_D6_VALUE);
     const rollGroup = setting(SETTINGS.FUDGE_ROLL_GROUP);
     const history = setting(SETTINGS.FUDGE_HISTORY) || [];
-    const targetUser = game.users.get(targetUserId);
 
     const players = game.users
       .filter((u) => u.active)
@@ -279,76 +287,69 @@ class StoryDicePanel extends FormApplication {
         id: u.id,
         name: u.isGM ? `${u.name} (GM)` : u.name,
         isGM: u.isGM,
-        selected: u.id === targetUserId,
       }));
 
-    let groupLabel;
-    let displayValue;
-    if (rollGroup === ROLL_GROUPS.D10) {
-      groupLabel = localize("STORYDICE.RollGroup.D10");
-      displayValue = d10Value;
-    } else if (rollGroup === ROLL_GROUPS.D6) {
-      groupLabel = localize("STORYDICE.RollGroup.D6");
-      displayValue = d6Value;
-    } else {
-      groupLabel = localize("STORYDICE.RollGroup.All");
-      displayValue = d10Value;
-    }
-
-    const targetName = targetUser ? targetUser.name : "";
-    let statusText;
-    if (fudgeActive) {
-      statusText = format("STORYDICE.Status.Active", {
-        player: targetName,
-        value: displayValue,
-        group: groupLabel,
-      });
-    } else {
-      statusText = localize("STORYDICE.Status.Idle");
-    }
+    const queueEntries = queue.map((entry) => {
+      const user = game.users.get(entry.userId);
+      let valueLabel;
+      let groupLabel;
+      if (entry.rollGroup === ROLL_GROUPS.D10) {
+        valueLabel = `d10=${entry.d10Value}`;
+        groupLabel = localize("STORYDICE.RollGroup.D10");
+      } else if (entry.rollGroup === ROLL_GROUPS.D6) {
+        valueLabel = `d6=${entry.d6Value}`;
+        groupLabel = localize("STORYDICE.RollGroup.D6");
+      } else {
+        valueLabel = `d10=${entry.d10Value} / d6=${entry.d6Value}`;
+        groupLabel = localize("STORYDICE.RollGroup.All");
+      }
+      return {
+        id: entry.id,
+        userId: entry.userId,
+        playerName: user ? user.name : entry.userId,
+        valueLabel,
+        groupLabel,
+      };
+    });
 
     return {
-      fudgeActive,
-      targetUserId,
-      targetName,
+      queueEntries,
+      queueCount: queueEntries.length,
       d10Value,
       d6Value,
       rollGroup,
       players,
       history: history.slice(0, MAX_HISTORY),
       rollGroups: [
-        {
-          value: ROLL_GROUPS.D10,
-          label: localize("STORYDICE.RollGroup.D10"),
-          selected: rollGroup === ROLL_GROUPS.D10,
-        },
-        {
-          value: ROLL_GROUPS.D6,
-          label: localize("STORYDICE.RollGroup.D6"),
-          selected: rollGroup === ROLL_GROUPS.D6,
-        },
-        {
-          value: ROLL_GROUPS.ALL,
-          label: localize("STORYDICE.RollGroup.All"),
-          selected: rollGroup === ROLL_GROUPS.ALL,
-        },
+        { value: ROLL_GROUPS.D10, label: localize("STORYDICE.RollGroup.D10"), selected: rollGroup === ROLL_GROUPS.D10 },
+        { value: ROLL_GROUPS.D6, label: localize("STORYDICE.RollGroup.D6"), selected: rollGroup === ROLL_GROUPS.D6 },
+        { value: ROLL_GROUPS.ALL, label: localize("STORYDICE.RollGroup.All"), selected: rollGroup === ROLL_GROUPS.ALL },
       ],
-      statusText,
     };
   }
 
   activateListeners(html) {
     super.activateListeners(html);
 
-    html.find("#story-dice-activate").click(this._onActivate.bind(this));
-    html.find("#story-dice-deactivate").click(this._onDeactivate.bind(this));
+    html.find("#story-dice-add").click(this._onAdd.bind(this));
+    html.find("#story-dice-clear-queue").click(this._onClearQueue.bind(this));
     html.find("#story-dice-clear-history").click(this._onClearHistory.bind(this));
     html.find("#story-dice-roll-group").on("change", this._onRollGroupChange.bind(this));
+    html.find(".story-dice-remove-entry").click(this._onRemoveEntry.bind(this));
     this._updateValueVisibility(html);
   }
 
   _onRollGroupChange(event) {
     const group = event.currentTarget.value;
+    this._setValueVisibility(group);
+  }
+
+  _updateValueVisibility(html) {
+    const group = html.find("#story-dice-roll-group").val();
+    this._setValueVisibility(group);
+  }
+
+  _setValueVisibility(group) {
     const d10Group = this.element.find("#story-dice-d10-group");
     const d6Group = this.element.find("#story-dice-d6-group");
 
@@ -364,26 +365,9 @@ class StoryDicePanel extends FormApplication {
     }
   }
 
-  _updateValueVisibility(html) {
-    const group = html.find("#story-dice-roll-group").val();
-    const d10Group = html.find("#story-dice-d10-group");
-    const d6Group = html.find("#story-dice-d6-group");
-
-    if (group === ROLL_GROUPS.D10) {
-      d10Group.show();
-      d6Group.hide();
-    } else if (group === ROLL_GROUPS.D6) {
-      d10Group.hide();
-      d6Group.show();
-    } else {
-      d10Group.show();
-      d6Group.show();
-    }
-  }
-
-  async _onActivate(event) {
+  async _onAdd(event) {
     event.preventDefault();
-    const fd = new FormDataExtended(this.element.find("form")[0]);
+    const fd = new FormDataExtended(this.element.find("#story-dice-add-form")[0]);
     const data = fd.object;
 
     const targetUserId = data.targetUserId;
@@ -396,19 +380,25 @@ class StoryDicePanel extends FormApplication {
     const d6Value = Math.clamped(parseInt(data.d6Value, 10) || 1, 1, 6);
     const rollGroup = data.rollGroup || ROLL_GROUPS.ALL;
 
-    await setSetting(SETTINGS.FUDGE_ACTIVE, true);
-    await setSetting(SETTINGS.FUDGE_TARGET_USER_ID, targetUserId);
     await setSetting(SETTINGS.FUDGE_D10_VALUE, d10Value);
     await setSetting(SETTINGS.FUDGE_D6_VALUE, d6Value);
     await setSetting(SETTINGS.FUDGE_ROLL_GROUP, rollGroup);
+    await addQueueEntry(targetUserId, d10Value, d6Value, rollGroup);
 
     this.render();
   }
 
-  async _onDeactivate(event) {
+  async _onRemoveEntry(event) {
     event.preventDefault();
-    await clearFudge();
-    ui.notifications.info(localize("STORYDICE.Notify.FudgeCleared"));
+    const entryId = event.currentTarget.closest("[data-entry-id]")?.dataset?.entryId;
+    if (!entryId) return;
+    await removeQueueEntry(entryId);
+    this.render();
+  }
+
+  async _onClearQueue(event) {
+    event.preventDefault();
+    await clearQueue();
     this.render();
   }
 
@@ -419,7 +409,7 @@ class StoryDicePanel extends FormApplication {
   }
 
   async _updateObject(_event, _formData) {
-    // Not used — activation is manual via button clicks
+    // Not used — actions are manual via button clicks
   }
 }
 
@@ -445,7 +435,7 @@ function injectSceneControl() {
 }
 
 // ---------------------------------------------------------------------------
-// Actor sheet header button — inject next to the roll controls
+// Actor sheet header button
 // ---------------------------------------------------------------------------
 
 function injectActorSheetButton() {
@@ -454,14 +444,14 @@ function injectActorSheetButton() {
     const actor = _app.object;
     if (actor?.type !== "character" && actor?.type !== "mook") return;
 
-    const fudgeActive = setting(SETTINGS.FUDGE_ACTIVE);
+    const queueLen = (setting(SETTINGS.FUDGE_QUEUE) || []).length;
     const container = html.find(".window-header .window-title");
     if (!container.length) return;
 
     const existing = container.parent().find(".story-dice-header-btn");
     if (existing.length) return;
 
-    const cls = fudgeActive ? "story-dice-header-btn active" : "story-dice-header-btn";
+    const cls = queueLen > 0 ? "story-dice-header-btn active" : "story-dice-header-btn";
     const btn = $(
       `<a class="${cls}" title="${localize("STORYDICE.Control.Title")}"><i class="fas fa-dice-d20"></i></a>`
     );
@@ -470,21 +460,23 @@ function injectActorSheetButton() {
       "margin-left": "auto",
       "margin-right": "4px",
       "cursor": "pointer",
-      "opacity": fudgeActive ? "1" : "0.5",
+      "opacity": queueLen > 0 ? "1" : "0.5",
     });
     container.parent().find(".window-title").after(btn);
   });
 }
 
 // ---------------------------------------------------------------------------
-// Update panel (if open) when settings change
+// Update panel when settings change
 // ---------------------------------------------------------------------------
 
 Hooks.on("updateSetting", (setting) => {
   if (!setting.key.startsWith(`${MODULE_ID}.`)) return;
 
-  if (setting.key === `${MODULE_ID}.${SETTINGS.FUDGE_ACTIVE}` && setting.value === true) {
-    localConsumed = false;
+  if (setting.key === `${MODULE_ID}.${SETTINGS.FUDGE_QUEUE}`) {
+    const queue = setting.value || [];
+    const stillQueued = queue.some((e) => e.userId === game.user.id);
+    if (!stillQueued) localConsumed.delete(game.user.id);
   }
 
   const panel = Object.values(ui.windows).find(
@@ -518,30 +510,42 @@ function exposeAPI() {
 
     async activateFudge(userId, d10Value, d6Value, rollGroup) {
       if (!game.user.isGM) return;
-      await setSetting(SETTINGS.FUDGE_ACTIVE, true);
-      await setSetting(SETTINGS.FUDGE_TARGET_USER_ID, userId);
-      await setSetting(SETTINGS.FUDGE_D10_VALUE, Math.clamped(d10Value ?? 1, 1, 10));
-      await setSetting(SETTINGS.FUDGE_D6_VALUE, Math.clamped(d6Value ?? 1, 1, 6));
-      await setSetting(SETTINGS.FUDGE_ROLL_GROUP, rollGroup ?? ROLL_GROUPS.ALL);
+      await addQueueEntry(
+        userId,
+        Math.clamped(d10Value ?? 1, 1, 10),
+        Math.clamped(d6Value ?? 1, 1, 6),
+        rollGroup ?? ROLL_GROUPS.ALL
+      );
     },
 
-    async deactivateFudge() {
+    async deactivateFudge(userId) {
       if (!game.user.isGM) return;
-      await clearFudge();
+      if (userId) {
+        const queue = setting(SETTINGS.FUDGE_QUEUE) || [];
+        const entry = queue.find((e) => e.userId === userId);
+        if (entry) await removeQueueEntry(entry.id);
+      } else {
+        await clearQueue();
+      }
     },
 
-    isActive() {
-      return setting(SETTINGS.FUDGE_ACTIVE);
+    async deactivateAll() {
+      if (!game.user.isGM) return;
+      await clearQueue();
+    },
+
+    isActive(userId) {
+      return !!findQueueEntry(userId);
+    },
+
+    getQueue() {
+      return setting(SETTINGS.FUDGE_QUEUE) || [];
     },
 
     getStatus() {
       return {
-        active: setting(SETTINGS.FUDGE_ACTIVE),
-        targetUserId: setting(SETTINGS.FUDGE_TARGET_USER_ID),
-        d10Value: setting(SETTINGS.FUDGE_D10_VALUE),
-        d6Value: setting(SETTINGS.FUDGE_D6_VALUE),
-        rollGroup: setting(SETTINGS.FUDGE_ROLL_GROUP),
-        history: setting(SETTINGS.FUDGE_HISTORY),
+        queue: setting(SETTINGS.FUDGE_QUEUE) || [],
+        history: setting(SETTINGS.FUDGE_HISTORY) || [],
       };
     },
   };
